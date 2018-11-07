@@ -104,3 +104,6 @@ venv.bak/
 .mypy_cache/
 
 *.h5
+
+models/
+logs/
