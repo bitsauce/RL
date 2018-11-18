@@ -39,3 +39,14 @@ def calculate_expected_return(rewards, gamma):
         r = reward + gamma * r
         expected_return.append(r)
     return expected_return[::-1] # reverse so that we get the expected return from start to end
+
+# Calculate advantage by the General Advantage Estimator (GAE) method
+def calcualte_advantage(rewards, values, gamma, lam):
+    T = len(rewards)
+    adv = rewards[T-1] + gamma * values[T] - values[T-1]
+    generalized_advantage = [adv]
+    for t in range(T-2, -1, -1):
+        td  = rewards[t] + gamma * values[t+1] - values[t]
+        adv = td + gamma * lam * adv
+        generalized_advantage.append(adv)
+    return generalized_advantage[::-1]
