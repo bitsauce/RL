@@ -1,5 +1,6 @@
 from collections import deque
 import numpy as np
+import scipy.signal
 
 class FrameStack():
     def __init__(self, initial_frame, stack_size=4, preprocess_fn=None):
@@ -31,22 +32,52 @@ class Scheduler():
             self.counter = self.interval
             self.value *= self.decay_factor
         return self.value
-        
-def calculate_expected_return(rewards, gamma):
-    expected_return = []
-    r = 0
-    for reward in rewards[::-1]: # for rewards from end to start
-        r = reward + gamma * r
-        expected_return.append(r)
-    return expected_return[::-1] # reverse so that we get the expected return from start to end
 
-# Calculate advantage by the General Advantage Estimator (GAE) method
-def calcualte_advantage(rewards, values, gamma, lam):
-    T = len(rewards)
-    adv = rewards[T-1] + gamma * values[T] - values[T-1]
-    generalized_advantage = [adv]
-    for t in range(T-2, -1, -1):
-        td  = rewards[t] + gamma * values[t+1] - values[t]
-        adv = td + gamma * lam * adv
-        generalized_advantage.append(adv)
-    return generalized_advantage[::-1]
+def discount(x, gamma):
+    return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
+
+def compute_v_and_adv(rewards, values, bootstrapped_value, gamma, lam=1.0):
+    rewards = np.array(rewards)
+    values = np.array(list(values) + [bootstrapped_value])
+    v = discount(np.array(list(rewards) + [bootstrapped_value]), gamma)[:-1]
+    delta = rewards + gamma * values[1:] - values[:-1]
+    adv = discount(delta, gamma * lam)
+    return v, adv
+
+def compute_returns(rewards, bootstrap_value, terminals, gamma):
+    # (N, T) -> (T, N)
+    #rewards = np.transpose(rewards, [1, 0])
+    #terminals = np.transpose(terminals, [1, 0])
+    returns = []
+    R = bootstrap_value
+    for i in reversed(range(len(rewards))):
+        R = rewards[i] + (1.0 - terminals[i]) * gamma * R
+        returns.append(R)
+    returns = reversed(returns)
+    # (T, N) -> (N, T)
+    #returns = np.transpose(list(returns), [1, 0])
+    return np.array(list(returns))
+
+def compute_gae(rewards, values, bootstrap_values, terminals, gamma, lam):
+    # (N, T) -> (T, N)
+    #rewards = np.transpose(rewards, [1, 0])
+    #values = np.transpose(values, [1, 0])
+    values = np.vstack((values, [bootstrap_values]))
+    #terminals = np.transpose(terminals, [1, 0])
+    # compute delta
+    deltas = []
+    for i in reversed(range(len(rewards))):
+        V = rewards[i] + (1.0 - terminals[i]) * gamma * values[i + 1]
+        delta = V - values[i]
+        deltas.append(delta)
+    deltas = np.array(list(reversed(deltas)))
+    # compute gae
+    A = deltas[-1,:]
+    advantages = [A]
+    for i in reversed(range(len(deltas) - 1)):
+        A = deltas[i] + (1.0 - terminals[i]) * gamma * lam * A
+        advantages.append(A)
+    advantages = reversed(advantages)
+    # (T, N) -> (N, T)
+    #advantages = np.transpose(list(advantages), [1, 0])
+    return np.array(list(advantages))
